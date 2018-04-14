@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='xgboost_tuner',
-    version='0.1',
+    version='0.1.1',
     description='XGBoost Automatic Parameter Tuning Library',
     author='cwerner87',
     author_email='cwerner87@users.noreply.github.com',

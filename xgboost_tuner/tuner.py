@@ -1,6 +1,6 @@
 from scipy.stats import halfnorm, randint as sp_randint, uniform
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import KFold, StratifiedKFold
 from typing import List, Tuple, Type, Union
 import itertools
 import numpy as np
@@ -31,23 +31,23 @@ def clean_params_for_sk(params: dict) -> dict:
     return params_copy
 
 
-def tune_num_estimators(metric: str,
+def tune_num_estimators(folds: Union[KFold, StratifiedKFold],
+                        metric: str,
                         label: np.ndarray,
                         params: dict,
-                        strat_folds: StratifiedKFold,
                         train) -> Tuple[int, float]:
     """
     Uses xgboost's cross-validation method to tune the number of estimators and returns that along with the best CV score
     achieved.
 
+    :param folds:
+        A KFold or StratifiedKFold object to cross validate the parameters.
     :param metric:
         Evaluation metric that is monitored during cross-validation - e.g. 'logloss' or 'rmse'.
     :param label:
         An array-like containing the labels of the classification or regression problem.
     :param params:
         A dictionary of XGB parameters.
-    :param strat_folds:
-        A StratifiedKFold object to cross validate the parameters.
     :param train:
         An array-like containing the training input samples.
     :return:
@@ -56,7 +56,7 @@ def tune_num_estimators(metric: str,
     eval_hist = xgb.cv(
         dtrain=xgb.DMatrix(train, label=label),
         early_stopping_rounds=50,
-        folds=strat_folds,
+        folds=list(folds.split(train, label)),
         metrics=metric,
         num_boost_round=10000,
         params=params,
@@ -68,12 +68,12 @@ def tune_num_estimators(metric: str,
 
 
 def tune_xgb_params_segment_by_grid(estimator_cls: Type[Union[xgb.XGBClassifier, xgb.XGBRegressor]],
+                                    folds: Union[KFold, StratifiedKFold],
                                     label: np.ndarray,
                                     metric_sklearn: str,
                                     n_jobs: int,
                                     param_grid: dict,
                                     params: dict,
-                                    strat_folds: StratifiedKFold,
                                     train: np.ndarray,
                                     verbosity_level: int = 10) -> Tuple[dict, float]:
     """
@@ -81,6 +81,8 @@ def tune_xgb_params_segment_by_grid(estimator_cls: Type[Union[xgb.XGBClassifier,
 
     :param estimator_cls:
         The class type of the estimator to instantiate - either an XGBClassifier or an XGBRegressor.
+    :param folds:
+        A KFold or StratifiedKFold object to cross validate the parameters.
     :param label:
         An array-like containing the labels of the classification or regression problem.
     :param metric_sklearn:
@@ -94,8 +96,6 @@ def tune_xgb_params_segment_by_grid(estimator_cls: Type[Union[xgb.XGBClassifier,
         values [0.5, 0.6, 0.7, 0.8].
     :param params:
         A dictionary of XGB parameters.
-    :param strat_folds:
-        A StratifiedKFold object to cross validate the parameters.
     :param train:
         An array-like containing the training input samples.
     :param verbosity_level:
@@ -106,7 +106,7 @@ def tune_xgb_params_segment_by_grid(estimator_cls: Type[Union[xgb.XGBClassifier,
     params_copy = clean_params_for_sk(params)
 
     grid = GridSearchCV(
-        cv=strat_folds.split(train, label),
+        cv=folds.split(train, label),
         estimator=estimator_cls(**params_copy),
         n_jobs=n_jobs,
         param_grid=param_grid,
@@ -124,11 +124,11 @@ def tune_xgb_params_segment_by_grid(estimator_cls: Type[Union[xgb.XGBClassifier,
 
 
 def tune_xgb_params_randomized(estimator_cls,
+                               folds: Union[KFold, StratifiedKFold],
                                label: np.ndarray,
                                metric_sklearn: str,
                                n_jobs: int,
                                params: dict,
-                               strat_folds: StratifiedKFold,
                                train: np.ndarray,
                                n_iter: int = 20,
                                verbosity_level: int = 10,
@@ -136,6 +136,8 @@ def tune_xgb_params_randomized(estimator_cls,
     """
     :param estimator_cls:
         The class type of the estimator to instantiate - either an XGBClassifier or an XGBRegressor.
+    :param folds:
+        A KFold or StratifiedKFold object to cross validate the parameters.
     :param label:
         An array-like containing the labels of the classification or regression problem.
     :param metric_sklearn:
@@ -146,8 +148,6 @@ def tune_xgb_params_randomized(estimator_cls,
         The number of jobs to run simultaneously.
     :param params:
         A dictionary of XGB parameters.
-    :param strat_folds:
-        A StratifiedKFold object to cross validate the parameters.
     :param train:
         An array-like containing the training input samples.
     :param n_iter:
@@ -174,7 +174,7 @@ def tune_xgb_params_randomized(estimator_cls,
     }
 
     rand_search = RandomizedSearchCV(
-        cv=strat_folds.split(train, label),
+        cv=folds.split(train, label),
         estimator=estimator_cls(**params_copy),
         n_iter=n_iter,
         n_jobs=n_jobs,
@@ -187,11 +187,11 @@ def tune_xgb_params_randomized(estimator_cls,
 
 
 def tune_xgb_params_incremental(estimator_cls,
+                                folds: Union[KFold, StratifiedKFold],
                                 label: np.ndarray,
                                 metric_sklearn: str,
                                 n_jobs: int,
                                 params: dict,
-                                strat_folds: StratifiedKFold,
                                 train: np.ndarray,
                                 colsample_bytree_max: float = 1.0,
                                 colsample_bytree_min: float = 0.6,
@@ -215,6 +215,8 @@ def tune_xgb_params_incremental(estimator_cls,
 
     :param estimator_cls:
         The class type of the estimator to instantiate - either an XGBClassifier or an XGBRegressor.
+    :param folds:
+        A KFold or StratifiedKFold object to cross validate the parameters.
     :param label:
         An array-like containing the labels of the classification or regression problem.
     :param metric_sklearn:
@@ -225,8 +227,6 @@ def tune_xgb_params_incremental(estimator_cls,
         The number of jobs to run simultaneously.
     :param params:
         A dictionary of XGB parameters.
-    :param strat_folds:
-        A StratifiedKFold object to cross validate the parameters.
     :param train:
         An array-like containing the training input samples.
     :param colsample_bytree_max:
@@ -295,12 +295,12 @@ def tune_xgb_params_incremental(estimator_cls,
     for param_grid in param_grids:
         new_params, score = tune_xgb_params_segment_by_grid(
             estimator_cls=estimator_cls,
+            folds=folds,
             label=label,
             metric_sklearn=metric_sklearn,
             n_jobs=n_jobs,
             param_grid=param_grid,
             params=params_copy,
-            strat_folds=strat_folds,
             train=train,
             **kwargs
         )
@@ -400,12 +400,18 @@ def tune_xgb_params(label: np.ndarray,
     if random_state is not None:
         cur_xgb_params['random_state'] = random_state
 
-    strat_folds = StratifiedKFold(n_splits=cv_folds, random_state=random_state)
+    if 'binary' in objective or 'multi' in objective:
+        folds = StratifiedKFold(n_splits=cv_folds, random_state=random_state)
+    elif 'reg' in objective:
+        folds = KFold(n_splits=cv_folds, random_state=random_state)
+    else:
+        raise ValueError('Invalid objective: {}'.format(objective))
+
     init_num_estimators, init_score = tune_num_estimators(
+        folds=folds,
         metric=metric_xgb,
         label=label,
         params=cur_xgb_params,
-        strat_folds=strat_folds,
         train=train
     )
     cur_xgb_params['n_estimators'] = init_num_estimators
@@ -417,22 +423,22 @@ def tune_xgb_params(label: np.ndarray,
     if strategy == 'incremental':
         new_params, tune_history = tune_xgb_params_incremental(
             estimator_cls=estimator_cls,
+            folds=folds,
             label=label,
             metric_sklearn=metric_sklearn,
             n_jobs=n_jobs,
             params=cur_xgb_params,
-            strat_folds=strat_folds,
             train=train,
             **kwargs
         )
     else:
         new_params, tune_history = tune_xgb_params_randomized(
             estimator_cls=estimator_cls,
+            folds=folds,
             label=label,
             metric_sklearn=metric_sklearn,
             n_jobs=n_jobs,
             params=cur_xgb_params,
-            strat_folds=strat_folds,
             train=train,
             **kwargs
         )
@@ -442,10 +448,10 @@ def tune_xgb_params(label: np.ndarray,
     # Lower the learning rate and find the optimal number of estimators
     cur_xgb_params['learning_rate'] = lower_learning_rate
     cur_xgb_params['n_estimators'], lower_rate_score = tune_num_estimators(
+        folds=folds,
         label=label,
         metric=metric_xgb,
         params=cur_xgb_params,
-        strat_folds=strat_folds,
         train=train
     )
     history.append((cur_xgb_params.copy(), lower_rate_score))

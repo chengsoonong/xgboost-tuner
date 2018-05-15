@@ -402,7 +402,7 @@ def tune_xgb_params(label: np.ndarray,
 
     if 'binary' in objective or 'multi' in objective:
         folds = StratifiedKFold(n_splits=cv_folds, random_state=random_state)
-    elif 'reg' in objective:
+    elif 'count' in objective or 'reg' in objective:
         folds = KFold(n_splits=cv_folds, random_state=random_state)
     else:
         raise ValueError('Invalid objective: {}'.format(objective))

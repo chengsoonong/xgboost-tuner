@@ -320,11 +320,10 @@ def tune_xgb_params(label: np.ndarray,
                     cv_folds: int = 5,
                     init_colsample_bytree: float = 0.8,
                     init_gamma: float = 0,
-                    init_learning_rate: float = 0.1,
                     init_max_depth: int = 6,
                     init_min_child_weight: int = 1,
                     init_subsample: float = 0.8,
-                    lower_learning_rate: float = 0.01,
+                    learning_rates: List[float] = None,
                     n_jobs: int = None,
                     random_state: int = None,
                     **kwargs) -> Tuple[dict, List[Tuple[dict, float]]]:
@@ -351,17 +350,14 @@ def tune_xgb_params(label: np.ndarray,
         The initial colsample_bytree parameter for XGB.
     :param init_gamma:
         The initial gamma parameter for XGB.
-    :param init_learning_rate:
-        The initial learning rate parameter for XGB.
     :param init_max_depth:
         The initial maximum depth parameter for XGB.
     :param init_min_child_weight:
         The initial minimum child weight parameter for XGB.
     :param init_subsample:
         The initial subsample parameter for XGB.
-    :param lower_learning_rate:
-        A lower learning rate (which must be lower than the initial learning rate) to try with the tuned parameters after they
-        have been selected.
+    :param learning_rates:
+        A list of possible learning rate parameters - defaults to [0.1, 0.01].
     :param n_jobs:
         An optional parameter to control the amount of parallel jobs - defaults to the amount of CPUs available.
     :param random_state:
@@ -371,12 +367,13 @@ def tune_xgb_params(label: np.ndarray,
     :return:
         A dictionary of tuned parameters and a list of the parameters found at each step with their respective scores.
     """
-    assert lower_learning_rate < init_learning_rate, 'Final learning rate should be lower than the initial rate.'
+    learning_rates = learning_rates or [0.1, 0.01]
+    learning_rates = sorted(learning_rates, reverse=True)
     assert strategy in ['incremental', 'randomized'], 'Tuning strategy must be in {incremental, randomized}.'
     cur_xgb_params = {
         'colsample_bytree': init_colsample_bytree,
         'gamma': init_gamma,
-        'learning_rate': init_learning_rate,
+        'learning_rate': learning_rates[0],
         'max_depth': init_max_depth,
         'min_child_weight': init_min_child_weight,
         'nthread': n_jobs or os.cpu_count(),
@@ -445,23 +442,28 @@ def tune_xgb_params(label: np.ndarray,
     cur_xgb_params.update({k: v for k, v in new_params.items() if k not in {'nthread', 'num_classes'}})
     history.extend(tune_history)
 
-    # Lower the learning rate and find the optimal number of estimators
-    cur_xgb_params['learning_rate'] = lower_learning_rate
-    cur_xgb_params['n_estimators'], lower_rate_score = tune_num_estimators(
-        folds=folds,
-        label=label,
-        metric=metric_xgb,
-        params=cur_xgb_params,
-        train=train
-    )
-    history.append((cur_xgb_params.copy(), lower_rate_score))
+    # Progressively try lower learning rates and find the optimal number of estimators
+    best_learning_rate = learning_rates[0]
+    best_num_estimators = init_num_estimators
+    best_score = init_score
+    for learning_rate in learning_rates[1:]:
+        cur_xgb_params['learning_rate'] = learning_rate
+        cur_xgb_params['n_estimators'], score = tune_num_estimators(
+            folds=folds,
+            label=label,
+            metric=metric_xgb,
+            params=cur_xgb_params,
+            train=train
+        )
+        history.append((cur_xgb_params.copy(), score))
 
-    # Select the old learning rate based on the new score, but the ordering of what's better depends on the objective.
-    is_init_superior = (metric_xgb == 'auc' and init_score > lower_rate_score)
-    is_init_superior |= (metric_xgb != 'auc' and init_score < lower_rate_score)
-    if is_init_superior:
-        cur_xgb_params['learning_rate'] = init_learning_rate
-        cur_xgb_params['n_estimators'] = init_num_estimators
+        if (metric_xgb == 'auc' and best_score < score) or (metric_xgb != 'auc' and best_score > score):
+            best_learning_rate = learning_rate
+            best_num_estimators = cur_xgb_params['n_estimators']
+            best_score = score
+
+    cur_xgb_params['learning_rate'] = best_learning_rate
+    cur_xgb_params['n_estimators'] = best_num_estimators
 
     # In multiclass problems, this parameter is required for XGBoost, but is not a parameter of interest to be tuned.
     if is_multi_class:

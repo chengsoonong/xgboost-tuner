@@ -1,7 +1,7 @@
 **xgboost-tuner is a Python library for automating the tuning of XGBoost parameters.**
 
 Due to XGBoost's large number of parameters and the size of their possible parameter spaces, doing an ordinary GridSearch over all of them isn't computationally feasible.
- 
+
 The excellent article [Complete Guide to Parameter Tuning in XGBoost](https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/) offers an alternative approach to tuning XGBoost by tuning parameters incrementally.
 
 This library offers two strategies to automate this tuning - an incremental approach as laid out in the article above and an alternative approach using a more computationally efficient randomized search.
@@ -49,7 +49,8 @@ best_params, history = tune_xgb_params(
     colsample_bytree_min=0.8,
     colsample_bytree_max=1.0,
     subsample_min=0.8,
-    subsample_max=1.0
+    subsample_max=1.0,
+    dry_run=True,
 )
 ```
 
@@ -76,6 +77,7 @@ best_params, history = tune_xgb_params(
     colsample_bytree_loc=0.5,
     colsample_bytree_scale=0.2,
     subsample_loc=0.5,
-    subsample_scale=0.2
+    subsample_scale=0.2,
+    n_iter=3,
 )
 ```

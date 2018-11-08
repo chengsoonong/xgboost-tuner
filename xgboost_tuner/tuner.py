@@ -4,7 +4,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from typing import List, Tuple, Type, Union
 import itertools
 import numpy as np
-import os
+import os, datetime
 import xgboost as xgb
 
 
@@ -60,7 +60,7 @@ def tune_num_estimators(folds: Union[KFold, StratifiedKFold],
         metrics=metric,
         num_boost_round=10000,
         params=params,
-        verbose_eval=True
+        verbose_eval=False
     )
     num_trees = eval_hist.shape[0]
     best_score = eval_hist.values[num_trees - 1, 0]
@@ -173,6 +173,7 @@ def tune_xgb_params_randomized(estimator_cls,
         'subsample': uniform(kwargs.get('subsample_loc', 0.2), kwargs.get('subsample_scale', 0.8))
     }
 
+    work_start = datetime.datetime.now()
     rand_search = RandomizedSearchCV(
         cv=folds.split(train, label),
         estimator=estimator_cls(**params_copy),
@@ -183,6 +184,9 @@ def tune_xgb_params_randomized(estimator_cls,
         verbose=verbosity_level
     )
     rand_search.fit(train, label)
+    work_end = datetime.datetime.now()
+    work_diff = work_end-work_start
+    print('Computing {} iterations took {}'.format(n_iter, work_diff))
     return rand_search.best_params_, [(rand_search.best_params_, rand_search.best_score_)]
 
 
@@ -393,7 +397,8 @@ def tune_xgb_params(label: np.ndarray,
         'nthread': n_jobs or os.cpu_count(),
         'objective': objective,
         'scale_pos_weight': 1,
-        'subsample': init_subsample
+        'subsample': init_subsample,
+        'silent': 1,
     }
     estimator_cls_map = {
         'binary': xgb.XGBClassifier,

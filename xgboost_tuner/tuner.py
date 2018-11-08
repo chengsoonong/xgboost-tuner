@@ -15,7 +15,7 @@ def clean_params_for_sk(params: dict) -> dict:
 
     :param params:
         A dictionary of XGB parameters.
-    :return: 
+    :return:
         A copy of the same dictionary without the aforementioned problematic parameters.
     """
     # In the xgb.cv call, nthread should be equal to the CPU count, but this causes a hang when
@@ -208,6 +208,7 @@ def tune_xgb_params_incremental(estimator_cls,
                                 subsample_max: float = 1.0,
                                 subsample_min: float = 0.6,
                                 subsample_step: float = 0.1,
+                                dry_run: bool = False,
                                 **kwargs) -> Tuple[dict, List[Tuple[dict, float]]]:
     """
     Tunes XGB parameters incrementally as suggested on
@@ -292,6 +293,18 @@ def tune_xgb_params_incremental(estimator_cls,
         {'reg_alpha': list(itertools.chain([0], [10 ** i for i in range(-6, 3)], [(10 ** i) / 2 for i in range(-6, 3)]))},
         {'reg_lambda': list(itertools.chain([0], [10 ** i for i in range(-6, 3)], [(10 ** i) / 2 for i in range(-6, 3)]))}
     ]
+    if dry_run:
+        print('Grid sizes')
+        tot_params = 0
+        for param_grid in param_grids:
+            print(param_grid)
+            num_params = 1
+            for key, value in param_grid.items():
+                num_params *= len(list(value))
+            tot_params += num_params
+        print('Total number of parameters to try {}'.format(tot_params))
+        return params_copy, history
+
     for param_grid in param_grids:
         new_params, score = tune_xgb_params_segment_by_grid(
             estimator_cls=estimator_cls,
@@ -326,6 +339,7 @@ def tune_xgb_params(label: np.ndarray,
                     learning_rates: List[float] = None,
                     n_jobs: int = None,
                     random_state: int = None,
+                    dry_run: bool = False,
                     **kwargs) -> Tuple[dict, List[Tuple[dict, float]]]:
     """
     :param label:
@@ -404,13 +418,17 @@ def tune_xgb_params(label: np.ndarray,
     else:
         raise ValueError('Invalid objective: {}'.format(objective))
 
-    init_num_estimators, init_score = tune_num_estimators(
-        folds=folds,
-        metric=metric_xgb,
-        label=label,
-        params=cur_xgb_params,
-        train=train
-    )
+    if dry_run:
+        init_num_estimators = 0
+        init_score = 0.1
+    else:
+        init_num_estimators, init_score = tune_num_estimators(
+            folds=folds,
+            metric=metric_xgb,
+            label=label,
+            params=cur_xgb_params,
+            train=train
+        )
     cur_xgb_params['n_estimators'] = init_num_estimators
     history = [(cur_xgb_params.copy(), init_score)]
 
@@ -426,6 +444,7 @@ def tune_xgb_params(label: np.ndarray,
             n_jobs=n_jobs,
             params=cur_xgb_params,
             train=train,
+            dry_run=dry_run,
             **kwargs
         )
     else:
@@ -442,28 +461,29 @@ def tune_xgb_params(label: np.ndarray,
     cur_xgb_params.update({k: v for k, v in new_params.items() if k not in {'nthread', 'num_classes'}})
     history.extend(tune_history)
 
-    # Progressively try lower learning rates and find the optimal number of estimators
-    best_learning_rate = learning_rates[0]
-    best_num_estimators = init_num_estimators
-    best_score = init_score
-    for learning_rate in learning_rates[1:]:
-        cur_xgb_params['learning_rate'] = learning_rate
-        cur_xgb_params['n_estimators'], score = tune_num_estimators(
-            folds=folds,
-            label=label,
-            metric=metric_xgb,
-            params=cur_xgb_params,
-            train=train
-        )
-        history.append((cur_xgb_params.copy(), score))
+    if not dry_run:
+        # Progressively try lower learning rates and find the optimal number of estimators
+        best_learning_rate = learning_rates[0]
+        best_num_estimators = init_num_estimators
+        best_score = init_score
+        for learning_rate in learning_rates[1:]:
+            cur_xgb_params['learning_rate'] = learning_rate
+            cur_xgb_params['n_estimators'], score = tune_num_estimators(
+                folds=folds,
+                label=label,
+                metric=metric_xgb,
+                params=cur_xgb_params,
+                train=train
+            )
+            history.append((cur_xgb_params.copy(), score))
 
-        if (metric_xgb == 'auc' and best_score < score) or (metric_xgb != 'auc' and best_score > score):
-            best_learning_rate = learning_rate
-            best_num_estimators = cur_xgb_params['n_estimators']
-            best_score = score
+            if (metric_xgb == 'auc' and best_score < score) or (metric_xgb != 'auc' and best_score > score):
+                best_learning_rate = learning_rate
+                best_num_estimators = cur_xgb_params['n_estimators']
+                best_score = score
 
-    cur_xgb_params['learning_rate'] = best_learning_rate
-    cur_xgb_params['n_estimators'] = best_num_estimators
+        cur_xgb_params['learning_rate'] = best_learning_rate
+        cur_xgb_params['n_estimators'] = best_num_estimators
 
     # In multiclass problems, this parameter is required for XGBoost, but is not a parameter of interest to be tuned.
     if is_multi_class:

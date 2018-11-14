@@ -81,3 +81,16 @@ best_params, history = tune_xgb_params(
     n_iter=3,
 )
 ```
+
+
+#### Using the best hyperparameters to train a classifier
+
+This assumes that you already have ```best_params``` from one of the previous examples.
+
+```python
+import xgboost as xgb
+train, label = load_svmlight_file('data/agaricus.txt.train')
+dtrain = xgb.DMatrix(train, label=label)
+bst = xgb.train(best_params, dtrain)
+prob_pos = bst.predict(dtrain)
+```
